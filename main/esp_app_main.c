@@ -104,6 +104,10 @@ const DefaultStringVal defaultStringVals[] = {
     {"gpio_exp_config", CONFIG_GPIO_EXP_CONFIG},
     {"bat_config", ""},
     {"metadata_config", ""},
+    /* ⇩⇩⇩ HIER NEU ⇩⇩⇩ */
+    {"nfc_cfg", "{\"enable\":true,\"irq\":4,\"rst\":5,\"i2c_port\":1,\"sda\":21,\"scl\":22}"},
+    {"spotify_cfg", "{\"client_id\":\"\",\"scopes\":\"user-modify-playback-state user-read-playback-state user-read-currently-playing\",\"refresh_token\":\"\",\"user_display\":\"\"}"},
+    /* ⇧⇧⇧ HIER NEU ⇧⇧⇧ */
     {"telnet_enable", ""},
     {"telnet_buffer", "40000"},
     {"telnet_block", "500"},

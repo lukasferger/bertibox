@@ -35,6 +35,8 @@
 #include "platform_esp32.h"
 #include "trace.h"
 #include "tools.h"
+#include "spotify_web.h"
+
 static const char TAG[] = "http_server";
 
 EXT_RAM_ATTR static httpd_handle_t _server;
@@ -168,6 +170,10 @@ esp_err_t http_server_start()
 		MEMTRACE_PRINT_DELTA_MESSAGE("Registering regular handlers");
     	register_regular_handlers(_server);
 		MEMTRACE_PRINT_DELTA_MESSAGE("HTTP Server regular handlers registered");
+		MEMTRACE_PRINT_DELTA_MESSAGE("Registering Spotify NFC Handler");
+        spotify_web_register(server);
+		MEMTRACE_PRINT_DELTA_MESSAGE("Spotify NFC handler registered");
+
     }
 
     return err;

@@ -1,0 +1,116 @@
+name: OTA Build & Publish
+
+on:
+  push:
+    branches: [ main, develop ]
+  tags:
+    - 'v*'
+
+env:
+  DOCKER_IMAGE: my-registry.local/sle118/squeezelite-esp32-idfv435:latest   # <- dein Image
+  IDF_TARGET: esp32
+  OTA_ROOT: /var/www/ota/bertibox
+  PROJECT_NAME: bertibox
+
+jobs:
+  build:
+    runs-on: [self-hosted, home, docker]  # Labels deines Runners
+    steps:
+      - name: Checkout (mit Submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compute VERSION
+        id: v
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "value=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            SHORT=$(git rev-parse --short HEAD)
+            TS=$(date +'%Y%m%d-%H%M')
+            BR=${GITHUB_REF_NAME//\//-}
+            echo "value=${BR}-${TS}-${SHORT}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build in Docker (idf.py with -DVERSION)
+        env:
+          VERSION: ${{ steps.v.outputs.value }}
+        run: |
+          docker pull "$DOCKER_IMAGE"
+          docker run --rm \
+            -v "$PWD":/workspace \
+            -w /workspace \
+            "$DOCKER_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              git submodule update --init --recursive
+              # ggf. sdkconfig.defaults vorbereiten
+              idf.py build -DVERSION="${VERSION}"
+              mkdir -p out
+              cp -v build/squeezelite.bin out/
+              if [ -f build/recovery.bin ]; then cp -v build/recovery.bin out/; fi
+              (cd out && sha256sum squeezelite.bin > sha256.txt)
+              cat > out/metadata.json <<EOF
+              {
+                "version": "${VERSION}",
+                "commit": "$(git rev-parse HEAD)",
+                "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                "toolchain": "${DOCKER_IMAGE}"
+              }
+              EOF
+            '
+
+      - name: Publish to OTA webroot
+        env:
+          VERSION: ${{ steps.v.outputs.value }}
+        run: |
+          set -euo pipefail
+          DEST="${OTA_ROOT}/${VERSION}"
+          sudo mkdir -p "$DEST"
+          sudo cp -v out/* "$DEST/"
+
+      - name: Update index.json & latest symlink
+        env:
+          VERSION: ${{ steps.v.outputs.value }}
+        run: |
+          set -euo pipefail
+          cd "${OTA_ROOT}"
+          # latest -> VERSION
+          sudo ln -sfn "${VERSION}" latest
+          # index.json quick&dirty (append if not exists)
+          TMP=$(mktemp)
+          if [ -f index.json ]; then
+            # einfache, robuste Aktualisierung per jq (falls vorhanden)
+            if command -v jq >/dev/null 2>&1; then
+              jq --arg v "$VERSION" '
+                .latest=$v
+                | .builds = ([.builds[]] + [{"version":$v,"date":"'$(date +%F)'","url":"./\($v)/squeezelite.bin"}])
+                | .project="squeezelite"
+              ' index.json > "$TMP" || true
+              sudo mv "$TMP" index.json
+            else
+              # Minimal: neu schreiben
+              cat > "$TMP" <<JSON
+              {"project":"squeezelite","latest":"$VERSION","builds":[{"version":"$VERSION","date":"$(date +%F)","url":"./$VERSION/squeezelite.bin"}]}
+              JSON
+              sudo mv "$TMP" index.json
+            fi
+          else
+            cat > "$TMP" <<JSON
+            {"project":"squeezelite","latest":"$VERSION","builds":[{"version":"$VERSION","date":"$(date +%F)","url":"./$VERSION/squeezelite.bin"}]}
+            JSON
+            sudo mv "$TMP" index.json
+          fi
+
+      - name: (Optional) GitHub Release bei Tags
+        if: ${{ github.ref_type == 'tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/squeezelite.bin
+            out/recovery.bin
+            out/sha256.txt
+            out/metadata.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
