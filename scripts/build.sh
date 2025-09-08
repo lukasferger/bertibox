@@ -11,6 +11,7 @@
 
 set -Eeuo pipefail
 
+
 DOCKER="${DOCKER:-1}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-sle118/squeezelite-esp32-idfv435}"
 IDF_TARGET="${IDF_TARGET:-esp32}"
