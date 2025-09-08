@@ -152,6 +152,7 @@ if [[ "$DOCKER" == "1" ]]; then
 
   ${DOCKER_BIN} pull "${DOCKER_IMAGE}" >/dev/null 2>&1 || true
   ${DOCKER_BIN} run --rm \
+    -u "${HOST_UID}:${HOST_GID}" \
     -e TZ="${TZ}" \
     -e VERSION="${VERSION}" \
     -e IDF_TARGET="${IDF_TARGET}" \
