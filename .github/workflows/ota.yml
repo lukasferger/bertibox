@@ -31,6 +31,14 @@ jobs:
           submodules: recursive
           # clean: true  # <- weglassen; bei root-Ownership scheitert das oft
 
+           # Root-Reste wegräumen: Container läuft als root und löscht build/out auf dem Host-Mount
+      - name: Nuke old build folders (container root)
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":"$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE" \
+            alpine:3.20 sh -c 'rm -rf build out || true'
+
       - name: Compute VERSION
         id: v
         shell: bash
