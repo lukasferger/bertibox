@@ -18,26 +18,10 @@ jobs:
     runs-on: [self-hosted]
 
     steps:
-
-      - name: Fix workspace permissions (pre)
-        run: |
-          chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
-          find "$GITHUB_WORKSPACE" -type d -exec chmod u+rwx {} + || true
-          find "$GITHUB_WORKSPACE" -type f -exec chmod u+rw {} + || true
-
-      - name: Checkout (mit Submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          # clean: true  # <- weglassen; bei root-Ownership scheitert das oft
-
-           # Root-Reste wegräumen: Container läuft als root und löscht build/out auf dem Host-Mount
-      - name: Nuke old build folders (container root)
-        run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE":"$GITHUB_WORKSPACE" \
-            -w "$GITHUB_WORKSPACE" \
-            alpine:3.20 sh -c 'rm -rf build out || true'
+          clean: true
 
       - name: Compute VERSION
         id: v
