@@ -65,6 +65,8 @@ build_inside() {
   # läuft im Build-Context (Host oder Container)
   set -Eeuo pipefail
 
+  git config --global --add safe.directory "$(pwd)"
+
   echo "[build] Submodule check…"
   git submodule update --init --recursive
 
