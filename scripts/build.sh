@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # Build deiner (E)SP32-App im Docker-Image (oder nativ) und sammle Artefakte in ./out
 # Konfigurierbar per ENV:
-# - DOCKER=1|0                # Standard: 1 (im Container bauen)
-# - DOCKER_IMAGE=…            # Standard: sle118/squeezelite-esp32-idfv435 (oder eigenes)
-# - IDF_TARGET=esp32          # esp32 / esp32s3 / …
-# - VERSION=…                 # falls leer, wird aus Tag/Branch+Zeit+SHA erzeugt
-# - EXTRA_IDF_ARGS=…          # z. B. "-DLOG_LEVEL=INFO"
-# - OUT_DIR=out               # Artefaktausgabe
-# - CCACHE_DIR=~/.ccache      # aktiviert ccache-Mount, falls vorhanden
+# - DOCKER=1|0                 # Standard: 1 (im Container bauen)
+# - DOCKER_IMAGE=…             # Standard: sle118/squeezelite-esp32-idfv435 (oder eigenes)
+# - DOCKER_BIN=…               # z. B. "sudo docker" falls nötig; Standard: docker
+# - IDF_TARGET=esp32           # esp32 / esp32s3 / …
+# - VERSION=…                  # falls leer, wird aus Tag/Branch+Zeit+SHA erzeugt
+# - EXTRA_IDF_ARGS=…           # z. B. "-DLOG_LEVEL=INFO"
+# - OUT_DIR=out                # Artefaktausgabe
+# - CCACHE_DIR=~/.ccache       # aktiviert ccache-Mount, falls vorhanden
+# - BUILD_WEBAPP=1|0           # optionalen Webapp-Build steuern (Standard: 1)
 
 set -Eeuo pipefail
 
-
 DOCKER="${DOCKER:-1}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-sle118/squeezelite-esp32-idfv435}"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
 IDF_TARGET="${IDF_TARGET:-esp32}"
 OUT_DIR="${OUT_DIR:-out}"
 EXTRA_IDF_ARGS="${EXTRA_IDF_ARGS:-}"
+BUILD_WEBAPP="${BUILD_WEBAPP:-1}"
 TZ="${TZ:-Europe/Berlin}"
 
 # --- Hilfsfunktionen ---------------------------------------------------------
@@ -65,22 +68,46 @@ build_inside() {
   # läuft im Build-Context (Host oder Container)
   set -Eeuo pipefail
 
-  git config --global --add safe.directory "$(pwd)"
+  # --- Git Safe-Directory Workaround (Volume Ownership) ---
+  # Wichtig: sowohl Workspace als auch Submodule erlauben
+  git config --global --add safe.directory "$(pwd)" || true
+  git config --global --add safe.directory "$(pwd)/components/esp-dsp" || true
+  git config --global --add safe.directory "*" || true
+  git config --global protocol.file.allow always || true
 
-  echo "[build] Submodule check…"
-  git submodule update --init --recursive
+  echo "[build] Submodule sync/update…"
+  git submodule sync --recursive
+  if ! git submodule update --init --recursive; then
+    echo "[build] Submodule-Update fehlgeschlagen, versuche esp-dsp Reset…"
+    git submodule deinit -f components/esp-dsp || true
+    rm -rf components/esp-dsp || true
+    git submodule update --init --recursive --force
+  fi
 
-  # Optional: IDF_TARGET setzen, Version injizieren
+  # --- Optional: Web-UI bauen, falls vorhanden ---
+  if [[ "${BUILD_WEBAPP}" != "0" && -d components/wifi-manager/webapp ]]; then
+    if command -v npm >/dev/null 2>&1; then
+      echo "[build] Build webapp…"
+      pushd components/wifi-manager/webapp >/dev/null
+      (npm ci || npm install)
+      npm rebuild node-sass || true
+      npm run build
+      popd >/dev/null
+    else
+      echo "[build] npm nicht verfügbar – überspringe Webapp-Build."
+    fi
+  fi
+
+  # --- ESP-IDF Build ---
   export IDF_TARGET="${IDF_TARGET}"
-  echo "[build] Starte idf.py build (IDF_TARGET=${IDF_TARGET})…"
-  # Hinweis: -DVERSION wird in die Firmware eingebettet (später im UI sichtbar)
-  idf.py build -DVERSION="${VERSION}" ${EXTRA_IDF_ARGS}
+  echo "[build] idf.py build -DVERSION=${VERSION} ${EXTRA_IDF_ARGS:-}"
+  idf.py build -DVERSION="${VERSION}" ${EXTRA_IDF_ARGS:-}
 
+  # --- Artefakte sammeln ---
   echo "[build] Artefakte sammeln…"
   mkdir -p "${OUT_DIR}"
 
   # App-Binary ermitteln: alles außer Bootloader/Partition; nimm neuestes
-  # (bei Squeezelite heißt es meist 'squeezelite.bin')
   APP_BIN="$(ls -1t build/*.bin 2>/dev/null | grep -viE 'bootloader|partition' | head -n1 || true)"
   if [[ -z "${APP_BIN:-}" || ! -f "$APP_BIN" ]]; then
     echo "Konnte App-Binary nicht finden (build/*.bin). Prüfe Projektname/Build." >&2
@@ -98,9 +125,7 @@ build_inside() {
   # SHA256 & Metadata schreiben
   pushd "${OUT_DIR}" >/dev/null
   APP_SHA="$(hash256 squeezelite.bin)"
-  {
-    echo "${APP_SHA}  squeezelite.bin" > sha256.txt
-  }
+  echo "${APP_SHA}  squeezelite.bin" > sha256.txt
 
   cat > metadata.json <<EOF
 {
@@ -125,12 +150,13 @@ if [[ "$DOCKER" == "1" ]]; then
     CCACHE_DIR_MOUNT="-v ${CCACHE_DIR}:/root/.ccache -e IDF_CCACHE_ENABLE=1"
   fi
 
-  docker pull "${DOCKER_IMAGE}" >/dev/null 2>&1 || true
-  docker run --rm \
+  ${DOCKER_BIN} pull "${DOCKER_IMAGE}" >/dev/null 2>&1 || true
+  ${DOCKER_BIN} run --rm \
     -e TZ="${TZ}" \
     -e VERSION="${VERSION}" \
     -e IDF_TARGET="${IDF_TARGET}" \
     -e EXTRA_IDF_ARGS="${EXTRA_IDF_ARGS}" \
+    -e BUILD_WEBAPP="${BUILD_WEBAPP}" \
     -v "$PWD":/workspace \
     ${CCACHE_DIR_MOUNT:-} \
     -w /workspace \
