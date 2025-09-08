@@ -2,12 +2,9 @@ name: OTA Build & Publish
 
 on:
   push:
-    branches:
-      - main
-      - develop
-    tags:
-      - 'v*'          # Tag-Pushes (z. B. v1.2.3) triggern auch
-  workflow_dispatch:   # manueller Start im UI
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
 
 env:
   TZ: Europe/Berlin
@@ -19,11 +16,20 @@ env:
 jobs:
   build:
     runs-on: [self-hosted]
+
     steps:
+      # --- 0) Workspace-Besitz fixen, falls Vorlauf-Run root-Dateien hinterlassen hat
+      - name: Fix workspace permissions (pre)
+        run: |
+          sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
+          sudo find "$GITHUB_WORKSPACE" -type d -exec chmod u+rwx {} + || true
+          sudo find "$GITHUB_WORKSPACE" -type f -exec chmod u+rw {} + || true
+
       - name: Checkout (mit Submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          # clean: true  # <- weglassen; bei root-Ownership scheitert das oft
 
       - name: Compute VERSION
         id: v
@@ -39,6 +45,12 @@ jobs:
             echo "value=${BR}-${TS}-${SHORT}" >> $GITHUB_OUTPUT
           fi
 
+      # --- 1) Optional: sauberes Clean, falls build/out schon existieren
+      - name: Pre-clean build artifacts (best effort)
+        run: |
+          rm -rf build out || true
+
+      # --- 2) Docker-Build mit User-Mapping (verhindert root-Dateien)
       - name: Build (Docker)
         env:
           VERSION: ${{ steps.v.outputs.value }}
@@ -46,9 +58,24 @@ jobs:
           DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
           IDF_TARGET: ${{ env.IDF_TARGET }}
           OUT_DIR: out
+          HOST_UID: ${{ github.run_id }}  # Platzhalter; wird unten überschrieben
+          HOST_GID: 1000                  # Platzhalter; wird unten überschrieben
+        shell: bash
         run: |
+          set -euo pipefail
+          # UID/GID vom Runner holen
+          export HOST_UID=$(id -u)
+          export HOST_GID=$(id -g)
+
+          # Falls dein scripts/build.sh selbst 'docker run' macht:
+          #   nutze die Variablen HOST_UID/HOST_GID darin, um -u UID:GID zu setzen (siehe Hinweis unten).
           bash scripts/build.sh
-        timeout-minutes: 30
+
+      # --- 3) Ownership nach dem Build sicherstellen (falls scripts/publish.sh lokal packt)
+      - name: Fix workspace permissions (post build)
+        if: always()
+        run: |
+          sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
 
       - name: Publish to OTA webroot
         env:
