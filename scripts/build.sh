@@ -21,6 +21,8 @@ OUT_DIR="${OUT_DIR:-out}"
 EXTRA_IDF_ARGS="${EXTRA_IDF_ARGS:-}"
 BUILD_WEBAPP="${BUILD_WEBAPP:-1}"
 TZ="${TZ:-Europe/Berlin}"
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
 
 # --- Hilfsfunktionen ---------------------------------------------------------
 
