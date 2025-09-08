@@ -18,11 +18,13 @@ jobs:
     runs-on: [self-hosted]
 
     steps:
+
+      - name: Checkout (mit Submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
           clean: true
-
+          
       - name: Compute VERSION
         id: v
         shell: bash
