@@ -18,12 +18,12 @@ jobs:
     runs-on: [self-hosted]
 
     steps:
-      # --- 0) Workspace-Besitz fixen, falls Vorlauf-Run root-Dateien hinterlassen hat
+
       - name: Fix workspace permissions (pre)
         run: |
-          sudo chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
-          sudo find "$GITHUB_WORKSPACE" -type d -exec chmod u+rwx {} + || true
-          sudo find "$GITHUB_WORKSPACE" -type f -exec chmod u+rw {} + || true
+          chown -R $(id -u):$(id -g) "$GITHUB_WORKSPACE" || true
+          find "$GITHUB_WORKSPACE" -type d -exec chmod u+rwx {} + || true
+          find "$GITHUB_WORKSPACE" -type f -exec chmod u+rw {} + || true
 
       - name: Checkout (mit Submodules)
         uses: actions/checkout@v4
