@@ -19,6 +19,12 @@ jobs:
 
     steps:
 
+      - name: Clean old root-owned files
+        run: |
+          sudo rm -rf build out || true
+          sudo chown -R "$USER:$USER" .
+
+          
       - name: Checkout (mit Submodules)
         uses: actions/checkout@v4
         with:
